@@ -21,10 +21,10 @@ def plot_graphs(history, string):
     plt.legend([string, 'val_' + string])
     plt.show()
 
-X, y, val_frac = df_data["tweet"], df_data["Toxicity"], 0.00005
+X, y, val_frac = df_data["tweet"], df_data["Toxicity"], 0.05
 X_train, X_test, y_train, y_test = model_selection.train_test_split(np.array(X), np.array(y), test_size=val_frac, random_state=42)
 
-max_vocab_length, avg_tokens = 10000, 15
+max_vocab_length, avg_tokens = 10000, 2
 layer_vectorizer = TextVectorization(max_tokens=max_vocab_length, standardize="lower_and_strip_punctuation", output_sequence_length = avg_tokens)
 
 layer_vectorizer.adapt(X_train)
@@ -44,13 +44,16 @@ model = keras.Sequential([
     Dense(1, activation='sigmoid')
     ])
 
+print(embedding(layer_vectorizer(X_train[:1])))
+print(GlobalAveragePooling1D()(embedding(layer_vectorizer(X_train[:1]))))
 
 learning_rate = 0.001
 model.compile(loss=losses.BinaryCrossentropy(), optimizer=optimizers.Adam(learning_rate), metrics=['accuracy'])
 print(model.summary())
 history_1 = model.fit(X_train, y_train, epochs=5, validation_data=(X_test, y_test))
-# plot_graphs(history=history_1, string="accuracy")
-# plot_graphs(history=history_1, string="loss")
+plot_graphs(history=history_1, string="accuracy")
+plot_graphs(history=history_1, string="loss")
 
-print(model.predict(X_test))
-print(y_test)
+# print(model.predict(X_test))
+# print(y_test)
+
