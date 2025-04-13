@@ -8,6 +8,7 @@ import random
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss, accuracy_score
 from sklearn.datasets import make_blobs, make_circles, make_moons
+from sklearn.inspection import DecisionBoundaryDisplay
 # import tensorflow as tf
 # from tensorflow import keras
 # from tensorflow.keras.layers import TextVectorization, Embedding
@@ -24,18 +25,18 @@ from sklearn.datasets import make_blobs, make_circles, make_moons
 # print(y)
 
 epochs = 50000
-X, y = make_blobs(n_samples=500, centers=[[-2, 2], [2, -2]], cluster_std=2.5, random_state=0)
-X, y = make_circles(n_samples=500, noise=0.1, factor=0.3, random_state=0)
+X, y = make_blobs(n_samples=500, centers=[[-1, -1], [1, 1]], cluster_std=0.5, random_state=0)
+# X, y = make_circles(n_samples=500, noise=0.1, factor=0.3, random_state=0)
 
-plt.scatter(X[:, 0], X[:, 1], c=y)
-plt.title("Two normally-distributed clusters")
-plt.show(block=True)
+# plt.scatter(X[:, 0], X[:, 1], c=y)
+# plt.title("Two normally-distributed clusters")
+# plt.show(block=True)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 y_train, y_test = y_train[:, np.newaxis], y_test[:, np.newaxis]
 
 # X_train, y_train = np.array([[-1, -1], [1, 1]]), np.array([[0], [1]])
-n_train, learning_rate = X_train.shape[0], 1e-3
+n_train, learning_rate = X_train.shape[0], 1e-1
 
 [w1, w2, w3, w4, w5, w6] = map(float, np.random.rand(6, 1))
 
@@ -90,14 +91,31 @@ for epoch in range(epochs):
         accs_train.append(accuracy_train)
         accs_val.append(accuracy_val)
 
-plt.plot(losses_val, 'r', label = "Val loss")
-plt.plot(losses_train, 'b', label = "Train loss")
-plt.legend()
-plt.grid()
-plt.show()
+# plt.plot(losses_val, 'r', label = "Val loss")
+# plt.plot(losses_train, 'b', label = "Train loss")
+# plt.legend()
+# plt.grid()
+# plt.show()
+#
+# plt.plot(accs_train, 'g', label = "Train accuracy")
+# plt.plot(accs_val, 'b', label = "Val accuracy")
+# plt.legend()
+# plt.grid()
+# plt.show()
 
-plt.plot(accs_train, 'g', label = "Train accuracy")
-plt.plot(accs_val, 'b', label = "Val accuracy")
-plt.legend()
-plt.grid()
+min_x, min_y, max_x, max_y = -3, -3, 3, 3
+feature_1, feature_2 = np.meshgrid(np.linspace(min_x, max_x), np.linspace(min_y, max_y))
+grid = np.vstack([feature_1.ravel(), feature_2.ravel()]).T
+
+# Plot the decision surface
+a_11 = np.matmul(grid, [w1, w3])  # n*2 * 2*1
+a_12 = np.matmul(grid, [w2, w4])  # n*2 * 2*1
+out_11 = sigmoid(a_11)  # n*1
+out_12 = sigmoid(a_12)  # n*1
+a = np.matmul(np.column_stack((out_11, out_12)), [w5, w6]) + 1  # n*2 * 2*1
+y_test_hat = np.reshape(sigmoid(a), feature_1.shape)
+display = DecisionBoundaryDisplay(xx0=feature_1, xx1=feature_2, response=y_test_hat)
+display.plot()
+
+display.ax_.scatter(X[:, 0], X[:, 1], c=y, edgecolor="black")
 plt.show()
