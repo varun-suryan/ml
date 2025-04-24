@@ -22,18 +22,18 @@ def plot_graphs(history, string):
     plt.show()
 
 
-X, y, val_frac = df_data["tweet"], df_data["Toxicity"], 0.05
+X, y, val_frac = df_data["tweet"], df_data["Toxicity"], 0.1
 X_train, X_test, y_train, y_test = model_selection.train_test_split(np.array(X), np.array(y), test_size=val_frac,
                                                                     random_state=42)
 
-max_vocab_length, avg_tokens = 10000, 2
+max_vocab_length, avg_tokens = 10000, 10
 layer_vectorizer = TextVectorization(max_tokens=max_vocab_length, standardize="lower_and_strip_punctuation",
                                      output_sequence_length=avg_tokens)
 
 layer_vectorizer.adapt(X_train)
 
 embedding = Embedding(input_dim=max_vocab_length,  # set input shape
-                      output_dim=3,  # set size of embedding vector
+                      output_dim=5,  # set size of embedding vector
                       embeddings_initializer="uniform",  # default, intialize randomly
                       name="embedding_1")
 
@@ -46,13 +46,14 @@ model = keras.Sequential([
     Dense(1, activation='sigmoid')
 ])
 
-print(embedding(layer_vectorizer(X_train[:1])))
-print(GlobalAveragePooling1D()(embedding(layer_vectorizer(X_train[:1]))))
-
+print(X_train[:1])
+print(layer_vectorizer(X_train[:1]))
+# print(GlobalAveragePooling1D()(embedding(layer_vectorizer(X_train[:1]))))
+print(layer_vectorizer.get_vocabulary()[:100])
 learning_rate = 0.001
 model.compile(loss=losses.BinaryCrossentropy(), optimizer=optimizers.Adam(learning_rate), metrics=['accuracy'])
-print(model.summary())
-history_1 = model.fit(X_train, y_train, epochs=5, validation_data=(X_test, y_test))
+# print(model.summary())
+history_1 = model.fit(X_train, y_train, epochs=2, validation_data=(X_test, y_test))
 plot_graphs(history=history_1, string="accuracy")
 plot_graphs(history=history_1, string="loss")
 
