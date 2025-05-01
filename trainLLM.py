@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
+from LLMTrainVars import *
 
 with open('input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
@@ -21,12 +22,10 @@ def decode(li):
 
 
 data = torch.tensor(encode(text), dtype=torch.long)
-train_size = 0.9
 n = int(train_size * len(data))
 
 train_data, val_data = data[:n], data[n:]
 
-block_size = 8
 print(train_data[:block_size + 1])
 
 x, y = train_data[:block_size], train_data[1:block_size + 1]
@@ -35,9 +34,6 @@ x, y = train_data[:block_size], train_data[1:block_size + 1]
 #     print("When context is {}, the target is {}".format(context.tolist(), target.tolist()))
 
 torch.manual_seed(1337)
-batch_size = 4
-
-
 def get_batch(dataType: str, batch_size=32):
     _data = train_data if dataType == "train" else val_data
     ix = torch.randint(len(_data) - block_size, (batch_size,))
@@ -61,13 +57,40 @@ print('-----')
 vocab_size = len(chars)
 
 
-class BigramLanguageModel(nn.Module):
-    def __init__(self, vocab_size):
+class Head(nn.Module):
+    def __init__(self, head_size):
         super().__init__()
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+        self.head_size = head_size
+        self.key = nn.Linear(n_embed, self.head_size, bias=False)
+        self.query = nn.Linear(n_embed, self.head_size, bias=False)
+        self.value = nn.Linear(n_embed, self.head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+    
+    def forward(self, x):
+        b, t, c = x.shape
+        k, q, v = self.key(x), self.query(x), self.value(x) #(b, t, self.head_size)
+        wei = q @ k.transpose(-2, -1) * self.head_size**-0.5
+        wei = wei.masked_fill(self.tril[:t, :t] == 0, -float('inf')) #(b, t, t)
+        wei = F.softmax(wei, dim=1)
+        out = wei @ v
+        return out # (b, t, self.head_size)
+
+
+
+class BigramLanguageModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
+        self.position_embedding_table = nn.Embedding(block_size, n_embed)
+        self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets=None):
-        _logits = self.token_embedding_table(idx)
+        b, t = idx.shape
+        tok_embed = self.token_embedding_table(idx) #(b, t, n_embed)
+        pos_emb = self.position_embedding_table(torch.arange(t, device=device)) #(t, n_embed)
+        x = tok_embed + pos_emb #(b, t, n_embed)
+
+        _logits = self.lm_head(x) #(b, t, vocab_size=c)
         b, t, c = _logits.shape
         _logits = _logits.view(b*t, c)
         if targets is not None:
@@ -88,23 +111,44 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
-m = BigramLanguageModel(vocab_size)
+m = BigramLanguageModel()
+m = m.to(device)
+
 logits, loss = m(xb, yb)
 start = torch.zeros((1, 1), dtype=torch.long)
 # print(decode(m.generate(start, 10)[0].tolist()))
 optimizer = torch.optim.AdamW(m.parameters(), lr=1e-3)
 
-batch_size, epochs = 32, 10000
+for name, param in m.named_parameters():
+        print(name, param.data, param.shape)
 
-losses = []
-for epoch in range(epochs):
-    xb, yb = get_batch("train", 512)
+@torch.no_grad()
+def estimate_loss():
+    out = {}
+    m.eval()
+    for dType in ["train", "val"]:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            xb, yb = get_batch(dType)
+            logits, loss = m(xb, yb)
+            losses[k] = loss
+        out[dType] = losses.mean()
+    return out
+
+# losses = []
+for iter in range(max_iters):
+
+    if iter % eval_iter == 0:
+        losses = estimate_loss()
+        print(f"Step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
+    xb, yb = get_batch("train")
     logits, loss = m(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
-    losses.append(loss.item())
+    # losses.append(loss.item())
 
-plt.plot(losses)
-plt.show()
+# plt.plot(losses)
+# plt.show()
 print(decode(m.generate(start, 100)[0].tolist()))
