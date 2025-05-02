@@ -34,6 +34,8 @@ x, y = train_data[:block_size], train_data[1:block_size + 1]
 #     print("When context is {}, the target is {}".format(context.tolist(), target.tolist()))
 
 torch.manual_seed(1337)
+
+
 def get_batch(dataType: str, batch_size=32):
     _data = train_data if dataType == "train" else val_data
     ix = torch.randint(len(_data) - block_size, (batch_size,))
@@ -65,16 +67,15 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embed, self.head_size, bias=False)
         self.value = nn.Linear(n_embed, self.head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-    
+
     def forward(self, x):
         b, t, c = x.shape
-        k, q, v = self.key(x), self.query(x), self.value(x) #(b, t, self.head_size)
-        wei = q @ k.transpose(-2, -1) * self.head_size**-0.5
-        wei = wei.masked_fill(self.tril[:t, :t] == 0, -float('inf')) #(b, t, t)
+        k, q, v = self.key(x), self.query(x), self.value(x)  #(b, t, self.head_size)
+        wei = q @ k.transpose(-2, -1) * self.head_size ** -0.5  #(b, t, t)
+        wei = wei.masked_fill(self.tril[:t, :t] == 0, -float('inf'))  #(b, t, t)
         wei = F.softmax(wei, dim=1)
         out = wei @ v
-        return out # (b, t, self.head_size)
-
+        return out  # (b, t, self.head_size)
 
 
 class BigramLanguageModel(nn.Module):
@@ -82,19 +83,20 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
+        self.sa_head = Head(n_embed)
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets=None):
         b, t = idx.shape
-        tok_embed = self.token_embedding_table(idx) #(b, t, n_embed)
-        pos_emb = self.position_embedding_table(torch.arange(t, device=device)) #(t, n_embed)
-        x = tok_embed + pos_emb #(b, t, n_embed)
-
-        _logits = self.lm_head(x) #(b, t, vocab_size=c)
+        tok_embed = self.token_embedding_table(idx)  #(b, t, n_embed)
+        pos_emb = self.position_embedding_table(torch.arange(t, device=device))  #(t, n_embed)
+        x = tok_embed + pos_emb  #(b, t, n_embed)
+        x = self.sa_head(x)
+        _logits = self.lm_head(x)  #(b, t, vocab_size=c)
         b, t, c = _logits.shape
-        _logits = _logits.view(b*t, c)
+        _logits = _logits.view(b * t, c)
         if targets is not None:
-            targets = targets.view(b*t)
+            targets = targets.view(b * t)
             _loss = F.cross_entropy(_logits, targets)
         else:
             _loss = None
@@ -103,8 +105,9 @@ class BigramLanguageModel(nn.Module):
     def generate(self, idx, max_tokens):
         for _ in range(max_tokens):
             b, t = idx.shape
-            _logits, _loss = self(idx)
-            _logits = _logits[t - 1::t]  #(b, c) Just get the last time dimension
+            id_extracted = idx[:, -block_size:]
+            _logits, _loss = self(id_extracted) # crop the context for positional embedding table
+            _logits = _logits[min(block_size-1, t - 1)::min(block_size, t)]  #(b, c) Just get the last time dimension
             probs = F.softmax(_logits, dim=1)  #(b,c)
             id_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, id_next), dim=1)
@@ -115,12 +118,13 @@ m = BigramLanguageModel()
 m = m.to(device)
 
 logits, loss = m(xb, yb)
-start = torch.zeros((1, 1), dtype=torch.long)
+start = torch.zeros((2, 1), dtype=torch.long)
 # print(decode(m.generate(start, 10)[0].tolist()))
 optimizer = torch.optim.AdamW(m.parameters(), lr=1e-3)
 
 for name, param in m.named_parameters():
-        print(name, param.data, param.shape)
+    print(name, param.data, param.shape)
+
 
 @torch.no_grad()
 def estimate_loss():
@@ -135,20 +139,22 @@ def estimate_loss():
         out[dType] = losses.mean()
     return out
 
-# losses = []
-for iter in range(max_iters):
 
-    if iter % eval_iter == 0:
+losses_plot = []
+for iter_ in range(max_iters):
+
+    if iter_ % eval_iter == 0:
         losses = estimate_loss()
-        print(f"Step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(f"Step {iter_}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
     xb, yb = get_batch("train")
     logits, loss = m(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
-    # losses.append(loss.item())
+    losses_plot.append(loss.item())
 
-# plt.plot(losses)
-# plt.show()
+plt.plot(losses_plot)
+plt.show()
 print(decode(m.generate(start, 100)[0].tolist()))
+print(decode(m.generate(start, 100)[1].tolist()))
