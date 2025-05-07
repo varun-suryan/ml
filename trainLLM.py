@@ -67,6 +67,7 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embed, self.head_size, bias=False)
         self.value = nn.Linear(n_embed, self.head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.droput = nn.Dropout(drop_out)
 
     def forward(self, x):
         b, t, c = x.shape
@@ -74,16 +75,55 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * self.head_size ** -0.5  #(b, t, t)
         wei = wei.masked_fill(self.tril[:t, :t] == 0, -float('inf'))  #(b, t, t)
         wei = F.softmax(wei, dim=1)
+        wei = self.droput(wei)
         out = wei @ v
         return out  # (b, t, self.head_size)
 
+class MultiHeadAttention(nn.Module):
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.head_size, self.num_heads = head_size, num_heads
+        self.heads = nn.ModuleList([Head(self.head_size) for _ in range(self.num_heads)])
+        self.proj = nn.Linear(head_size*num_heads, n_embed)
+        self.dropout = nn.Dropout(drop_out)
+
+    def forward(self, x):
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        return self.dropout(self.proj(out))
+
+class Feedforward(nn.Module):
+    def __init__(self, n_input):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_input, 4*n_embed), 
+            nn.ReLU(), 
+            nn.Linear(4*n_embed, n_embed),
+            nn.Dropout(drop_out)
+            )
+    
+    def forward(self, x):
+        return self.net(x)
+
+class Block(nn.Module):
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.sa_heads = MultiHeadAttention(num_heads, head_size//num_heads)
+        self.ffwd = Feedforward(head_size)
+        self.ln1, self.ln2 = nn.LayerNorm(n_embed), nn.LayerNorm(n_embed)
+
+    def forward(self, x): # x: (b, t, n_embed)
+        x = x + self.sa_heads(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
+        return x #(b, t, n_embed)
 
 class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_head = Head(n_embed)
+        self.blocks = nn.Sequential(*[Block(num_heads, head_size) for _ in range(num_layer)],
+            nn.LayerNorm(n_embed)
+            )
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -91,7 +131,7 @@ class BigramLanguageModel(nn.Module):
         tok_embed = self.token_embedding_table(idx)  #(b, t, n_embed)
         pos_emb = self.position_embedding_table(torch.arange(t, device=device))  #(t, n_embed)
         x = tok_embed + pos_emb  #(b, t, n_embed)
-        x = self.sa_head(x)
+        x = self.blocks(x) #(b, t, n_embed)
         _logits = self.lm_head(x)  #(b, t, vocab_size=c)
         b, t, c = _logits.shape
         _logits = _logits.view(b * t, c)
@@ -107,7 +147,7 @@ class BigramLanguageModel(nn.Module):
             b, t = idx.shape
             id_extracted = idx[:, -block_size:]
             _logits, _loss = self(id_extracted) # crop the context for positional embedding table
-            _logits = _logits[min(block_size-1, t - 1)::min(block_size, t)]  #(b, c) Just get the last time dimension
+            _logits = _logits[min(block_size-1, t - 1)::min(block_size, t)]  #(b, c) Just get the last time dimension. Might be buggy.
             probs = F.softmax(_logits, dim=1)  #(b,c)
             id_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, id_next), dim=1)
@@ -116,14 +156,14 @@ class BigramLanguageModel(nn.Module):
 
 m = BigramLanguageModel()
 m = m.to(device)
-
+print(device)
 logits, loss = m(xb, yb)
 start = torch.zeros((2, 1), dtype=torch.long)
 # print(decode(m.generate(start, 10)[0].tolist()))
 optimizer = torch.optim.AdamW(m.parameters(), lr=1e-3)
 
-for name, param in m.named_parameters():
-    print(name, param.data, param.shape)
+# for name, param in m.named_parameters():
+#     print(name, param.data, param.shape)
 
 
 @torch.no_grad()
@@ -156,5 +196,5 @@ for iter_ in range(max_iters):
 
 plt.plot(losses_plot)
 plt.show()
-print(decode(m.generate(start, 100)[0].tolist()))
-print(decode(m.generate(start, 100)[1].tolist()))
+print(decode(m.generate(start, 1000)[0].tolist()))
+# print(decode(m.generate(start, 100)[1].tolist()))
