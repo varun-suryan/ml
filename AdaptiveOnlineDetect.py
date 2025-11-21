@@ -16,12 +16,12 @@ REC_NAME = '3000003_0014'
 PN_DIR = 'mimic3wdb/1.0/30/3000003'
 
 # Segment of the record to analyze (absolute times)
-ANALYZE_START_S = 150.0
-ANALYZE_LEN_S = 10.0  # shorter windows = smaller GIFs
+ANALYZE_START_S = 420.0
+ANALYZE_LEN_S = 20.0  # shorter windows = smaller GIFs
 
 # Plot window (subset of analyzed segment, relative to ANALYZE_START_S)
 PLOT_START_S = 0.0
-PLOT_LEN_S = 10.0
+PLOT_LEN_S = 20.0
 
 # Detector params (no filtering)
 PREV_SEC = 0.3

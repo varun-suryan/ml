@@ -65,7 +65,7 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.head_size, self.num_heads = head_size, num_heads
         self.heads = nn.ModuleList([Head(self.head_size) for _ in range(self.num_heads)])
-        self.proj = nn.Linear(head_size * num_heads, n_embed)
+        self.proj = nn.Linear(head_size*num_heads, n_embed)
         self.dropout = nn.Dropout(drop_out)
 
     def forward(self, x):
@@ -161,11 +161,9 @@ print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
 
 losses_plot = []
 for iter_ in range(max_iters):
-
     if iter_ % eval_iter == 0:
         losses = estimate_loss()
         print(f"Step {iter_}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-
     xb, yb = get_batch("train", batch_size)
     logits, loss = m(xb, yb)
     optimizer.zero_grad(set_to_none=True)

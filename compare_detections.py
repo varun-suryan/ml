@@ -49,7 +49,6 @@ def match_events(true_events, adaptive_events, max_diff=0.2):
 peak_diffs = match_events(true_peaks, adaptive_peaks)
 notch_diffs = match_events(true_notches, adaptive_notches)
 trough_diffs = match_events(true_troughs, adaptive_troughs)
-
 # Calculate statistics
 print("\n" + "=" * 70)
 print("EMAIL CONTENT")
